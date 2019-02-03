@@ -1,4 +1,6 @@
 # >>>> BUILTIN MODULES
+# --------------------
+
 from collections import namedtuple
 import multiprocessing as mp
 import os
@@ -8,36 +10,49 @@ import re
 import logging
 from functools import partial
 from typing import Union, Sequence, Callable, Iterable
-from scipy import stats
-
-try:
-    import statworkflow.statutil as statutil
-except:
-    import statutil
-
-try:
-    from StringIO import StringIO  # py2.7
-except ImportError:
-    from io import StringIO  # py3.x
-    from io import BytesIO
+from io import StringIO  # py3.x
+from io import BytesIO
 
 # >>>> EXTERNAL MODULES
+# ---------------------
+
+import mojostat.template as template
 import psutil
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 from statsmodels.formula.api import ols
 from statsmodels.stats.libqsturng import psturng
+from scipy import stats
 
-# import scipy
+try:
+    import mojostat.statutil as statutil
+except:
+    import statutil
 
-logging.basicConfig(level=logging.DEBUG, format=' %(asctime)s - %(levelname)s - %(message)s')
+
+class MojoStatsException(Exception):
+    pass
+
+
+# >>>> GLOBAL VARIABLES (really?!)
+# ---------------------
 
 num_partitions = 10  # number of partitions to split dataframe
 num_cores = psutil.cpu_count() - 1  # number of cores on your machine minus 1
 
+# >>>> NAMED TUPLES
+# ---------------------
 
-def column_print(chunks: Union[list, tuple]):
+ttest_result = namedtuple('ttest_result', 'x_mean, x_stdev y_mean y_stdev low_ci hi_ci t_stat p_value deg_fred '
+                                          'sig_flag comp alt_comp cohensd power x_name y_name summary oneliner')
+PostHocResult = namedtuple('PostHocResults', 'title table pvalues')
+
+
+# >>>> MODULE CODE
+# ---------------------
+
+def column_arrange(chunks: Union[list, tuple]) -> list:
     '''
     Returns the input strings arranged in columns.
     :param strings: list or tuple of strings
@@ -54,10 +69,18 @@ def column_print(chunks: Union[list, tuple]):
         for word in words:
             aline += f'{word:<{max_str_length}}  '
         output.append(aline)
+    return output
+
+
+def column_print(chunks: Union[list, tuple]):
+    '''
+    Prints the output of column_arrange
+    '''
+    output = column_arrange(chunks)
     print('\n'.join(output))
 
 
-def _title(msg: str, level: int = 1, frame_size: int = 0):
+def _title(msg: str, level: int = 1, frame_size: int = 0) -> str:
     fs = frame_size if frame_size else len(msg)
     fc = "=-"[level - 1] if level in (0, 1) else ""
     frame = fc * fs
@@ -78,7 +101,7 @@ def format_chi2(*args, **kwargs) -> str:
         raise TypeError('format_ch2 expects either a 3+ length tuple, or explicit parameters for chi, df, and p')
 
 
-def _describe(frame: pd.DataFrame, func: Iterable, numeric_only: bool, **kwargs):
+def _describe(frame: pd.DataFrame, func: Iterable, numeric_only: bool, **kwargs) -> pd.DataFrame:
     def nullcount(ser):
         return ser.isnull().sum()
 
@@ -90,7 +113,7 @@ def _describe(frame: pd.DataFrame, func: Iterable, numeric_only: bool, **kwargs)
 def describe(frame: pd.DataFrame,
              func: Iterable = ('count', 'sum', 'mean', 'median', 'min', 'max', 'quantile',
                                'std', 'var', 'sem', 'skew', 'kurt'),
-             numeric_only: bool = True, **kwargs):
+             numeric_only: bool = True, **kwargs) -> pd.DataFrame:
     if type(frame) is pd.core.groupby.groupby.DataFrameGroupBy:
         dfs = list()
         for group, group_dat in frame:
@@ -105,7 +128,7 @@ def describe(frame: pd.DataFrame,
     return res_df
 
 
-def is_numeric(x: Union[int, float]):
+def is_numeric(x: Union[int, float]) -> bool:
     """
     :param x: Numeric
     :return: Bool indicating whether x can be converted to a number
@@ -128,7 +151,7 @@ def sqr(x: Union[int, float]):
         return None
 
 
-def p_desc2(p: Union[int, float]):
+def p_desc2(p: Union[int, float]) -> str:
     """
     :param p: Numeric statistical p-value
     :return: str indication of statistical significance level
@@ -146,7 +169,8 @@ def p_desc2(p: Union[int, float]):
         return ""
 
 
-def d_desc(d: Union[int, float]):
+# FIXME: Note: These are for t-tests, but not f-tests.
+def d_desc(d: Union[int, float]) -> str:
     if d <= .01:
         return 'very small'  # Sawilowsky, 2009
     elif d <= .20:
@@ -161,7 +185,7 @@ def d_desc(d: Union[int, float]):
         return 'huge'  # Sawilowsky, 2009
 
 
-def d_from_data(distribution1, distribution2):
+def d_from_data(distribution1:Sequence, distribution2:Sequence)->float:
     """
     :param distribution1: list-like, numerical
     :param distribution2: list-like, numerical
@@ -173,7 +197,7 @@ def d_from_data(distribution1, distribution2):
     try:
         l1, l2 = len(distribution1), len(distribution2)
     except:
-        return None
+        return np.nan
 
     if l1 and l2:
         m1 = np.mean(distribution1)
@@ -216,7 +240,7 @@ def int_or_float(x: Union[int, float, str]):
 
 
 # http://stackoverflow.com/questions/25571882/pandas-columns-correlation-with-statistical-significance
-def corr_pvalue(df: pd.DataFrame):
+def corr_pvalue(df: pd.DataFrame)->pd.DataFrame:
     from scipy.stats import pearsonr
     import numpy as np
     import pandas as pd
@@ -235,8 +259,12 @@ def corr_pvalue(df: pd.DataFrame):
     return pd.DataFrame(arr, index=cols, columns=cols)
 
 
-# function to identify empty columns in a dataframe
-def is_nan_col(alist: Sequence):
+def is_nan_col(alist: Sequence)->bool:
+    '''
+    function to identify empty columns in a dataframe
+    :param alist: any type comparable with typing.Sequence
+    :return: True if xp.isnan(x) for all items in sequence
+    '''
     try:
         return all([np.isnan(x) for x in list(alist)])
     except:
@@ -246,7 +274,7 @@ def is_nan_col(alist: Sequence):
 # careful, this is an updater
 def dump_nan_cols(df: pd.DataFrame, quiet: bool = True):
     if not isinstance(df, pd.DataFrame):
-        raise Exception('df must be type pandas.DataFrame')
+        raise MojoStatsException('df must be type pandas.DataFrame')
     dumped = []
     for col in df.columns:
         if is_nan_col(df[col]):
@@ -270,7 +298,9 @@ def my_read_excel(fname: str, quiet: bool = True):
 # todo: how am I supposed to test this?!
 def parallelize_dataframe(df: pd.DataFrame, func: Callable):
     if not isinstance(df, pd.DataFrame):
-        raise Exception('df must be type pandas.DataFrame')
+        raise MojoStatsException('df must be type pandas.DataFrame')
+    if not isinstance(func, Callable):
+        raise MojoStatsException('func must be type typing.Callable')
     df_split = np.array_split(df, num_partitions)
     pool = mp.Pool(num_cores)
     df = pd.concat(pool.map(func, df_split))
@@ -287,7 +317,7 @@ def get_var_name(**kwargs):
         return None
 
 
-def round_all(seq: Sequence, digits: int = 2):
+def round_all(seq: Sequence, digits: int = 2)->list:
     def rnd(x, d):
         try:
             return round(x, d)
@@ -297,7 +327,7 @@ def round_all(seq: Sequence, digits: int = 2):
     return [rnd(seq, digits) for x in seq][0]
 
 
-def table_pct(df: pd.DataFrame, colnames: Sequence[str], denom: Union[int, float]):
+def table_pct(df: pd.DataFrame, colnames: Sequence[str], denom: Union[int, float])->pd.DataFrame:
     if not isinstance(df, pd.DataFrame):
         raise Exception('df must be type pandas.DataFrame')
 
@@ -311,20 +341,18 @@ def table_pct(df: pd.DataFrame, colnames: Sequence[str], denom: Union[int, float
     return df
 
 
-def headtail(df: pd.DataFrame):
+def headtail(df: pd.DataFrame)->pd.DataFrame:
     if not isinstance(df, pd.DataFrame):
         raise Exception('df must be type pandas.DataFrame')
     h = df.head()
     t = df.tail()
     if sorted(list(h.index)) == sorted(list(t.index)):
-        # zprint(h)
         return h
     else:
-        # zprint(pd.concat([h, t]), addon='')
         return pd.concat([h, t])
 
-
-def make_corr_p_table(corr_table):
+# FIXME: what is this parameter type? pd.DataFrame?? If so, say so.
+def make_corr_p_table(corr_table)->str:
     p_table_html = corr_table.to_html().__str__()
     pat = re.compile(r'(<td>)(0\.\d+)(</td>)')
     matches = set(pat.findall(p_table_html))
@@ -340,7 +368,7 @@ def make_corr_p_table(corr_table):
     return p_table_html
 
 
-def make_var_formula(vars: Sequence, interactions: bool = False):
+def make_var_formula(vars: Sequence, interactions: bool = False)->str:
     var_formula = ''
     for var in vars:
         if not var_formula:
@@ -370,7 +398,7 @@ def make_var_formula(vars: Sequence, interactions: bool = False):
 #     res = namedtuple('RegressionResult', 'figure, estimate')
 #     return res(figure=fig, estimate=est)
 
-def run_zprop(c: tuple):
+def run_zprop(c: tuple)->str:
     """
     e.g., c = (c_s, c_l, 'Study', 'Leisure')
           (
@@ -391,8 +419,10 @@ def run_zprop(c: tuple):
         f'Z({sum(g1)})={z:0.2f}, p={p:0.4f}'
     return s
 
-# todo: rerun using patsy!
-def run_anova(df: pd.DataFrame, dv: str, factors: list, html:bool=False):
+
+# todo: rewrite using patsy!
+# todo: return a named tuple!
+def run_anova(df: pd.DataFrame, dv: str, factors: list, html: bool = False)->tuple:
     formula = f'{dv} ~ {make_var_formula(factors, True)}'
     model = ols(formula, data=df).fit()
     table = sm.stats.anova_lm(model, type=2)
@@ -404,7 +434,7 @@ def pvalues_from_tukeyhsd(table):
     return psturng(np.abs(table.meandiffs / table.std_pairs), len(table.groupsunique), table.df_total)
 
 
-def anova_table_to_dataframe(table):
+def anova_table_to_dataframe(table)->pd.DataFrame:
     df = pd.DataFrame(table)
     index = df.index.tolist()
     index = [element.replace('C(', '').replace(')', '').replace(':', '_') for element in index]
@@ -433,7 +463,7 @@ def anova_table_to_dataframe(table):
     return df
 
 
-def df_row_to_f_statement(df: pd.DataFrame, identifier: str):
+def df_row_to_f_statement(df: pd.DataFrame, identifier: str)->str:
     """
     assumes df version of anovatable!
     should come from anova_table_to_dataframe()
@@ -452,22 +482,14 @@ def df_row_to_f_statement(df: pd.DataFrame, identifier: str):
 #     pvalues = pvalues_from_tukeyhsd(table)
 #     zprint(table, '\n<br>', pvalues, *args, **kwargs)
 
-def post_hocs(df: pd.DataFrame, dm: str, factor: str):
-    '''
-
-    :param df:
-    :param dm:
-    :param factor:
-    :return: statsmodels.sandbox.stats.multicomp.TukeyHSDResults object. call obj.table.summary()
-    '''
+def post_hocs(df: pd.DataFrame, dm: str, factor: str) -> PostHocResult:
     title = f'Post-hoc T-Tests (TukeyHSD): {dm} ~ {factor}'
     table = sm.stats.multicomp.pairwise_tukeyhsd(df.dropna()[dm], df.dropna()[factor])
     pvalues = pvalues_from_tukeyhsd(table)
-    PostHocResult = namedtuple('PostHocResults', 'title table pvalues')
     return PostHocResult(title, table, pvalues)
 
 
-def get_post_hocs_as_df(df: pd.DataFrame, dm: str, factor: str, tag: str = ''):
+def get_post_hocs_as_df(df: pd.DataFrame, dm: str, factor: str, tag: str = '') -> pd.DataFrame:
     table = sm.stats.multicomp.pairwise_tukeyhsd(df.dropna()[dm], df.dropna()[factor])
     pvalues = pvalues_from_tukeyhsd(table)
     table_csv = table._results_table.as_csv()
@@ -484,30 +506,29 @@ def get_post_hocs_as_df(df: pd.DataFrame, dm: str, factor: str, tag: str = ''):
     return df
 
 
-def counter_to_df(c: collections.Counter, sortkey: str = 'instances', sortorder: str = 'ascending'):
+def counter_to_df(c: collections.Counter, sortkey: str = 'instances', sortorder: str = 'ascending')->pd.DataFrame:
     """
     c: collections.Counter
     sortkey: str in ['terms', 'instances']
     sortorder: str in ['ascending', 'descending']
     """
-    from collections import Counter
-    from pandas import DataFrame
-    assert type(c) is Counter
+    assert type(c) is collections.Counter
     assert sortkey in ['terms', 'instances']
     d = dict(c)
-    df = DataFrame({'terms': list(d.keys()), 'instances': list(d.values())})
+    df = pd.DataFrame({'terms': list(d.keys()), 'instances': list(d.values())})
     order = int(sortorder == 'descending')
     df = df.sort_values([sortkey], ascending=[order])
     df.index = range(1, len(df) + 1)  # index is all jumbled now, recalc for sorted order
     return df
 
+
 # todo: x_name and y_name seem to do nothing!
-# todo: should but dv name in summary and oneliner!
-# todo: consider adding formula to comparison name
-# todo: allow list of alternatives!
+# todo: Should put dv name in summary and oneliner!
+# todo: Consider adding formula to comparison name
+# todo: Allow list of alternatives!
 def ttest(formula: str, data: pd.DataFrame, alternative: str = 'two-sided', usevar: str = 'unequal',
-          x_name: str = 'Group1', y_name: str = 'Group2', html: bool = False, kind='ind'):
-    assert kind in ('ind', 'rel'), "kind parameter must be either 'ind' or 'rel'"
+          x_name: str = 'Group1', y_name: str = 'Group2', html: bool = False, kind='ind')->list:
+    assert kind in ('ind', 'rel'), f"MojoStat.Stats: kind parameter must be either 'ind' or 'rel', not '{kind}"
 
     data_groups, comparisons = statutil.parse_equation(formula, data, min_groups=1)
 
@@ -533,8 +554,52 @@ def ttest(formula: str, data: pd.DataFrame, alternative: str = 'two-sided', usev
     return results
 
 
+def r_ttest_output(test_name: str, comp: str, alt_comp: str, alternative: str, x_name: str, y_name: str, x_mean: float,
+                   y_mean: float, x_stdev: float, y_stdev: float, t_stat: float, deg_fred: float, p_value: float,
+                   sig_flag: str, low_ci: float, hi_ci: float, cohens_d: float, power: float,
+                   html: bool = False) -> ttest_result:
+    if html:
+        full = f"""\
+        <p><b>{test_name}Two Sample T-Test</b><br>
+        ===========================================<br>
+        <font color=blue>Hypothesis</font>: {x_name} {comp} {y_name} ({alternative})<br>
+        <font color=blue>Statistic</font>: t = {t_stat:0.4f}, df = {deg_fred:0.2f}, p-value = {p_value: 0.4f} <b>{sig_flag}</b><br>
+        <font color=blue>Mean Group Difference</font>: {x_mean - y_mean:0.3f}<br>
+        <font color=blue>Conffidence Interval (95%)</font>: [{low_ci:0.3f} to {hi_ci:0.3f}]<br>
+        <font color=blue>Effect Size (Cohen's d)</font>: {cohens_d:0.2f}<br>
+        <font color=blue>Post-hoc Power</font>: {power:0.3f}<br>
+        <br>
+        <font color=blue>Result</font>: {x_name} (M:{x_mean:0.2f} SD:{x_stdev:0.2f}) {alt_comp} {y_name} (M:{y_mean:0.2f}, SD:{y_stdev:0.2f})<br>
+        </p>"""
+
+        oneline = f"<p>{x_name} (M:{x_mean:0.2f} SD:{x_stdev:0.2f}) {alternative} {y_name} (M:{y_mean:0.2f}, " \
+                  f"SD:{y_stdev:0.2f}), t({deg_fred:0.2f})={t_stat:0.3f}, p={p_value: 0.4f}, " \
+                  f"CI=[{low_ci:0.2f}, {hi_ci:0.2f}], d={cohens_d:0.2f}.<br></p>"
+    else:
+        full = """\
+        {test_name}Two Sample T-Test [{time_stamp}]
+        ===========================================
+        Hypothesis: {x_name} {comp} {y_name} ({alternative})
+        Statistic: t = {t_stat:0.4f}, df = {deg_fred:0.2f}, p-value = {p_value: 0.4f} {sig_flag}
+        Mean Group Difference: {x_mean - y_mean:0.3f}
+        Conffidence Interval (95%): [{low_ci:0.3f} to {hi_ci:0.3f}]
+        Effect Size (Cohen's d): {cohens_d:0.2f}
+        Post-hoc Power: {power:0.3f}
+
+        Result: {x_name} (M:{x_mean:0.2f} SD:{x_stdev:0.2f}) {alt_comp} {y_name} (M:{y_mean:0.2f}, SD:{y_stdev:0.2f})"""
+
+        oneline = f"{x_name} (M:{x_mean:0.2f} SD:{x_stdev:0.2f}) {alternative} {y_name} (M:{y_mean:0.2f}, " \
+                  f"SD:{y_stdev:0.2f}), t({deg_fred:0.2f})={t_stat:0.3f}, p={p_value: 0.4f}, " \
+                  f"CI=[{low_ci:0.2f}, {hi_ci:0.2f}], d={cohens_d:0.2f}."
+
+    res = ttest_result(x_mean, x_stdev, y_mean, y_stdev, low_ci, hi_ci, t_stat, p_value, deg_fred, sig_flag, comp,
+                       alt_comp, cohens_d, power, x_name, y_name, full, oneline)
+
+    return res
+
+
 def r_ttest_ind(x: Sequence, y: Sequence, alternative: str = 'two-sided', usevar: str = 'unequal',
-                x_name: str = 'Group1', y_name: str = 'Group2', html: bool = False):
+                x_name: str = 'Group1', y_name: str = 'Group2', html: bool = False) -> ttest_result:
     """
     >>> res = r_ttest_ind(x=list(np.arange(10,21)), y=list(np.arange(20.0,26.5,.5)), alternative='two-sided',
     ...             usevar='unequal', x_name='Group1', y_name='Group2')
@@ -545,10 +610,17 @@ def r_ttest_ind(x: Sequence, y: Sequence, alternative: str = 'two-sided', usevar
     >>> res.p_value
     3.2469535237571196e-06
     """
-    x_mean = np.mean(x)
-    x_stdev = np.std(x)
-    y_mean = np.mean(y)
-    y_stdev = np.std(y)
+    try:
+        x_mean = np.mean(x)
+        x_stdev = np.std(x)
+        y_mean = np.mean(y)
+        y_stdev = np.std(y)
+    except Exception as e:
+        raise MojoStatsException(f'x and y must each be a sequence of valid numbers:\n\t{e}')
+
+    assert alternative in ('larger', 'smaller',
+                           'two-sided'), f"MojoStat.Stat: alternative must be 'larger', 'smaller' or 'two-sided', not {alternative}"
+
     time_stamp = time.strftime("%x %X")
 
     cm = sm.stats.CompareMeans(sm.stats.DescrStatsW(x), sm.stats.DescrStatsW(y))
@@ -557,7 +629,7 @@ def r_ttest_ind(x: Sequence, y: Sequence, alternative: str = 'two-sided', usevar
     t_stat, p_value, deg_fred = sm.stats.ttest_ind(x, y, alternative=alternative, usevar=usevar)
 
     sig_flag = p_desc2(p_value)
-    test_name = ("Welch's " if usevar == 'unequal' else "")
+    test_name = ("Welch's Independent" if usevar == 'unequal' else "Idependent")
     cohens_d = d_from_data(x, y)
     power = sm.stats.tt_ind_solve_power(effect_size=cohens_d, nobs1=len(x), alpha=0.05, power=None,
                                         ratio=len(y) / len(x), alternative=alternative)
@@ -583,53 +655,27 @@ def r_ttest_ind(x: Sequence, y: Sequence, alternative: str = 'two-sided', usevar
         else:
             alt_comp = 'is not significantly different than'
 
-    if html:
-        s = f"""<p><b>{test_name}Two Sample T-Test</b><br>
-===========================================<br>
-<font color=blue>Hypothesis</font>: {x_name} {comp} {y_name} ({alternative})<br>
-<font color=blue>Statistic</font>: t = {t_stat:0.4f}, df = {deg_fred:0.2f}, p-value = {p_value: 0.4f} <b>{sig_flag}</b><br>
-<font color=blue>Mean Group Difference</font>: {x_mean - y_mean:0.3f}<br>
-<font color=blue>Conffidence Interval (95%)</font>: [{low_ci:0.3f} to {hi_ci:0.3f}]<br>
-<font color=blue>Effect Size (Cohen's d)</font>: {cohens_d:0.2f}<br>
-<font color=blue>Post-hoc Power</font>: {power:0.3f}<br>
-<br>
-<font color=blue>Result</font>: {x_name} (M:{x_mean:0.2f} SD:{x_stdev:0.2f}) {alt_comp} {y_name} (M:{y_mean:0.2f}, SD:{y_stdev:0.2f})<br>
-</p>
-"""
-        ol = f"""<p>{x_name} (M:{x_mean:0.2f} SD:{x_stdev:0.2f}) {alternative} {y_name} (M:{y_mean:0.2f}, SD:{y_stdev:0.2f}), \
-t({deg_fred:0.2f})={t_stat:0.3f}, p={p_value: 0.4f}, CI=[{low_ci:0.2f}, {hi_ci:0.2f}], d={cohens_d:0.2f}.<br>
-</p>
-"""
-    else:
-        s = f"""{test_name}Two Sample T-Test [{time_stamp}]
-===========================================
-Hypothesis: {x_name} {comp} {y_name} ({alternative})
-Statistic: t = {t_stat:0.4f}, df = {deg_fred:0.2f}, p-value = {p_value: 0.4f} {sig_flag}
-Mean Group Difference: {x_mean - y_mean:0.3f}
-Conffidence Interval (95%): [{low_ci:0.3f} to {hi_ci:0.3f}]
-Effect Size (Cohen's d): {cohens_d:0.2f}
-Post-hoc Power: {power:0.3f}
+    res = r_ttest_output(test_name=test_name, comp=comp, alt_comp=alt_comp, alternative=alternative,
+                         x_name=x_name, y_name=y_name, x_mean=x_mean, y_mean=y_mean, x_stdev=x_stdev, y_stdev=y_stdev,
+                         t_stat=t_stat, deg_fred=deg_fred, p_value=p_value, sig_flag=sig_flag,
+                         low_ci=low_ci, hi_ci=hi_ci, cohens_d=cohens_d, power=power, html=html)
 
-Result: {x_name} (M:{x_mean:0.2f} SD:{x_stdev:0.2f}) {alt_comp} {y_name} (M:{y_mean:0.2f}, SD:{y_stdev:0.2f})
-"""
-        ol = f"{x_name} (M:{x_mean:0.2f} SD:{x_stdev:0.2f}) {alt_comp} {y_name} (M:{y_mean:0.2f}, " \
-             f"SD:{y_stdev:0.2f}), t({deg_fred:0.2f})={t_stat:0.3f}, p={p_value:0.4f}, CI=[{low_ci:0.2f}, " \
-             f"{hi_ci:0.2f}], d={cohens_d:0.2f}."
-
-    ttest_result = namedtuple('ttest_result', 'x_mean, x_stdev y_mean y_stdev low_ci hi_ci t_stat p_value deg_fred sig_'
-                                              'flag comp alt_comp cohensd power x_name y_name summary oneliner')
-
-    res = ttest_result(x_mean, x_stdev, y_mean, y_stdev, low_ci, hi_ci, t_stat, p_value, deg_fred, sig_flag, comp,
-                       alt_comp, cohens_d, power, x_name, y_name, s, ol)
     return res
 
 
 def r_ttest_rel(x: Sequence, y: Sequence, alternative: str = 'two-sided', x_name: str = 'Group1',
-                y_name: str = 'Group2', html: bool = False):
-    x_mean = np.mean(x)
-    x_stdev = np.std(x)
-    y_mean = np.mean(y)
-    y_stdev = np.std(y)
+                y_name: str = 'Group2', html: bool = False) -> ttest_result:
+    try:
+        x_mean = np.mean(x)
+        x_stdev = np.std(x)
+        y_mean = np.mean(y)
+        y_stdev = np.std(y)
+    except Exception as e:
+        raise MojoStatsException(f'x and y must each be a sequence of valid numbers:\n\t{e}')
+
+    assert alternative in ('larger', 'smaller',
+                           'two-sided'), f"MojoStat.Stat: alternative must be 'larger', 'smaller' or 'two-sided', not {alternative}"
+
     xy_diff = [xy[0] - xy[1] for xy in zip(x, y)]
     time_stamp = time.strftime("%x %X")
 
@@ -642,23 +688,25 @@ def r_ttest_rel(x: Sequence, y: Sequence, alternative: str = 'two-sided', x_name
     low_ci, hi_ci = d.tconfint_mean(alpha=0.05, alternative=alternative)
 
     sig_flag = p_desc2(p_value)
+    # test_name = ("Welch's Related" if usevar == 'unequal' else "Related")
+    test_name = "Related"
     # cohens_d = d_from_t(t_stat, deg_fred).d
     cohens_d = d_from_data(x, y)
     power = sm.stats.tt_ind_solve_power(effect_size=cohens_d, nobs1=len(x), alpha=0.05, power=None,
                                         ratio=len(y) / len(x), alternative=alternative)
-    if 'larger' in alternative:
+    if 'larger' in alternative.lower():
         comp = '>'
         if p_value < .05:
             alt_comp = 'is significantly larger than'
         else:
             alt_comp = 'is not significantly larger than'
-    elif 'smaller' in alternative:
+    elif 'smaller' in alternative.lower():
         comp = '<'
         if p_value < .05:
             alt_comp = 'is significantly smaller than'
         else:
             alt_comp = 'is not significantly smaller than'
-    else:
+    else:  # two-sided
         comp = '!='
         if p_value < .05:
             if x_mean > y_mean:
@@ -668,47 +716,16 @@ def r_ttest_rel(x: Sequence, y: Sequence, alternative: str = 'two-sided', x_name
         else:
             alt_comp = 'is not significantly different than'
 
-    if html:
-        s = f"""<p><b>Two Sample Paired T-Test</b><br>
-===========================================<br>
-<font color=blue>Hypothesis</font>: {x_name} {comp} {y_name} ({alternative})<br>
-<font color=blue>Statistic</font>: t = {t_stat:0.4f}, df = {deg_fred:0.2f}, p-value = {p_value: 0.4f} <b>{sig_flag}</b><br>
-<font color=blue>Mean Group Difference</font>: {x_mean - y_mean:0.3f}<br>
-<font color=blue>Confidence Interval (95%)</font>: [{low_ci:0.3f} to {hi_ci:0.3f}]<br>
-<font color=blue>Effect Size (Cohen's d)</font>: {cohens_d:0.2f}<br>
-<font color=blue>Post-hoc Power</font>: {power:0.3f}<br>
-<br>
-<font color=blue>Result</font>: {x_name} (M:{x_mean:0.2f} SD:{x_stdev:0.2f}) {alt_comp} {y_name} (M:{y_mean:0.2f}, SD:{y_stdev:0.2f})<br>
-</p>
-"""
-        ol = f"""<p>{x_name} (M:{x_mean:0.2f} SD:{x_stdev:0.2f}) {alt_comp} {y_name} (M:{y_mean:0.2f}, SD:{y_stdev:0.2f}), \
-t({deg_fred:0.2f})={t_stat:0.3f}, p={p_value:0.4f}, CI=[{low_ci:0.2f}, {hi_ci:0.2f}], d={cohens_d:0.2f}.<br>
-</p>
-"""
-    else:
-        s = f"""Two Sample Paired T-Test
-===========================================
-Hypothesis: {x_name} {comp} {y_name} ({alternative})
-Statistic: t = {t_stat:0.4f}, df = {deg_fred:0.2f}, p-value = {p_value: 0.4f} {sig_flag}
-Mean Group Difference: {x_mean - y_mean:0.3f}
-Conffidence Interval (95%): [{low_ci:0.3f} to {hi_ci:0.3f}]
-Effect Size (Cohen's d): {cohens_d:0.2f}
-Post-hoc Power: {power:0.3f}
+    res = r_ttest_output(test_name=test_name, comp=comp, alt_comp=alt_comp, alternative=alternative,
+                         x_name=x_name, y_name=y_name, x_mean=x_mean, y_mean=y_mean, x_stdev=x_stdev, y_stdev=y_stdev,
+                         t_stat=t_stat, deg_fred=deg_fred, p_value=p_value, sig_flag=sig_flag,
+                         low_ci=low_ci, hi_ci=hi_ci, cohens_d=cohens_d, power=power, html=html)
 
-Result: {x_name} (M:{x_mean:0.2f} SD:{x_stdev:0.2f}) {alt_comp} {y_name} (M:{y_mean:0.2f}, SD:{y_stdev:0.2f})
-"""
-        ol = f"{x_name} (M:{x_mean:0.2f} SD:{x_stdev:0.2f}) {alt_comp} {y_name} (M:{y_mean:0.2f}, " \
-             f"SD:{y_stdev:0.2f}), t({deg_fred:0.2f})={t_stat:0.3f}, p={p_value: 0.4f}, CI=[{low_ci:0.2f}, " \
-             f"{hi_ci:0.2f}], d={cohens_d:0.2f}."
-
-    ttest_result = namedtuple('ttest_result',
-                              'x_mean, x_stdev y_mean y_stdev low_ci hi_ci t_stat p_value deg_fred sig_flag comp '
-                              'alt_comp cohensd power x_name y_name summary oneliner')
-
-    res = ttest_result(x_mean, x_stdev, y_mean, y_stdev, low_ci, hi_ci, t_stat, p_value, deg_fred, sig_flag, comp,
-                       alt_comp,
-                       cohens_d, power, x_name, y_name, s, ol)
     return res
+
+
+# >>>> QUICK TESTING
+# ---------------------
 
 
 if __name__ == '__main__':
@@ -717,7 +734,7 @@ if __name__ == '__main__':
     data_source = '/Users/nogard/Dropbox/Documents/python_coding/statworkflow/tests/data/data.csv'
     results = ttest(formula="rt ~ block", data=pd.read_csv(data_source),
                     alternative='two-sided', usevar='unequal',
-                    x_name='Group1', y_name='Group2', html=False, kind='ind')
+                    x_name='Group1', y_name='Group2', html=False, kind='rel')
     pprint(results)
     print()
     for result in results:
