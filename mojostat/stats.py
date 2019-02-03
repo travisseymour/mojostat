@@ -7,7 +7,6 @@ import os
 import time
 import collections
 import re
-import logging
 from functools import partial
 from typing import Union, Sequence, Callable, Iterable
 from io import StringIO  # py3.x
@@ -356,7 +355,6 @@ def make_corr_p_table(corr_table)->str:
     p_table_html = corr_table.to_html().__str__()
     pat = re.compile(r'(<td>)(0\.\d+)(</td>)')
     matches = set(pat.findall(p_table_html))
-    logging.debug(matches)
     for match in matches:
         val = match[1]
         fval = float(val)
