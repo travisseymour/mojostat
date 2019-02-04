@@ -162,6 +162,7 @@ def is_nan_col(alist: Sequence) -> bool:
     except:
         return False
 
+
 # FIXME: level scheme isn't super useful as written
 def _title(msg: str, level: int = 1, frame_size: int = 0) -> str:
     fs = frame_size if frame_size else len(msg)
@@ -276,6 +277,9 @@ def round_all(seq: Sequence[Number], digits: int = 2) -> ListOrTuple:
     else:
         return tuple(rounded)
 
+
+# >>>> QUICK TESTING
+# ---------------------
 
 if __name__ == '__main__':
     from pprint import pprint
