@@ -1,5 +1,5 @@
 """
-Companion module to MojoStat.Stats that contains any non-satistical functions.
+This module, MojoStat.StatUtil contains various useful helper functions and tools.
 """
 
 import pandas as pd
