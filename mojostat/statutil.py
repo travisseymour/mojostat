@@ -10,6 +10,7 @@ from typing import Union, Sequence, Callable, Iterable, AnyStr
 import psutil
 import multiprocessing as mp
 import numpy as np
+from functools import partial
 
 # >>>> CUSTOM TYPES
 # ---------------------
@@ -33,21 +34,24 @@ def is_number_sequence(seq: Sequence[Number]) -> bool:
     :param seq: Some Sequence
     :return: True if input s a Sequence of Numbers
     """
-    if isinstance(seq, Sequence):
-        return all([isinstance(x, Number) for x in seq])
-    else:
+    try:
+        return all([is_numeric(x) for x in seq])
+    except:
         return False
 
 
-def is_anystr_sequece(seq: Sequence[str]) -> bool:
+def is_str_sequence(seq: Sequence[str]) -> bool:
     """
-    Verifies that input is a Sequence of AnyStr
+    Verifies that input contains only strings
     :param seq: Some Sequence
-    :return: True if input s a Sequence of AnyStr
+    :return: True if inputs are all strings
     """
-    if isinstance(seq, Sequence):
+    if isinstance(seq, str):
+        return False
+
+    try:
         return all([isinstance(x, str) for x in seq])
-    else:
+    except:
         return False
 
 
@@ -69,6 +73,14 @@ def column_arrange(chunks: ListOrTuple) -> list:
             aline += f'{word:<{max_str_length}}  '
         output.append(aline)
     return output
+
+
+def column_print(chunks: ListOrTuple):
+    '''
+    Prints the output of column_arrange
+    '''
+    output = column_arrange(chunks)
+    print('\n'.join(output))
 
 
 def is_numeric(x: Number) -> bool:
@@ -150,15 +162,7 @@ def is_nan_col(alist: Sequence) -> bool:
     except:
         return False
 
-
-def column_print(chunks: ListOrTuple):
-    '''
-    Prints the output of column_arrange
-    '''
-    output = column_arrange(chunks)
-    print('\n'.join(output))
-
-
+# FIXME: level scheme isn't super useful as written
 def _title(msg: str, level: int = 1, frame_size: int = 0) -> str:
     fs = frame_size if frame_size else len(msg)
     fc = "=-"[level - 1] if level in (0, 1) else ""
@@ -255,7 +259,7 @@ def parallelize_dataframe(df: pd.DataFrame, func: Callable, num_partitions: int 
     return df
 
 
-def round_all(seq: Sequence[Number], digits: int = 2) -> list:
+def round_all(seq: Sequence[Number], digits: int = 2) -> ListOrTuple:
     """
     Rounds all the numbers in a sequence to _digits_ decimal places
     :param seq: Sequence of numbers
@@ -263,25 +267,28 @@ def round_all(seq: Sequence[Number], digits: int = 2) -> list:
     :return: rounded sequence
     """
 
-    def rnd(x, d):
-        try:
-            return round(x, d)
-        except:
-            return x
+    if not is_number_sequence(seq):
+        raise MojoStatsException('seq must be a sequence of numbers')
 
-    return [rnd(seq, digits) for x in seq][0]
+    rounded = map(partial(round, ndigits=digits), seq)
+    if isinstance(seq, list):
+        return list(rounded)
+    else:
+        return tuple(rounded)
 
 
 if __name__ == '__main__':
     from pprint import pprint
 
-    data_source = '/Users/nogard/Dropbox/Documents/python_coding/statworkflow/tests/data/data.csv'
-    print("rt ~ block")
-    res = parse_equation("rt ~ block", pd.read_csv(data_source))
-    print(res)
-    print()
-    print("rt ~ block * category")
-    res = parse_equation("rt ~ block * category", pd.read_csv(data_source))
-    pprint(res.data)
-    print()
-    pprint(res.comparisons)
+    print(round_all(seq=(22.3, 1.3, 58.44556, 5.98, .09), digits=1))
+
+    # data_source = '/Users/nogard/Dropbox/Documents/python_coding/statworkflow/tests/data/data.csv'
+    # print("rt ~ block")
+    # res = parse_equation("rt ~ block", pd.read_csv(data_source))
+    # print(res)
+    # print()
+    # print("rt ~ block * category")
+    # res = parse_equation("rt ~ block * category", pd.read_csv(data_source))
+    # pprint(res.data)
+    # print()
+    # pprint(res.comparisons)

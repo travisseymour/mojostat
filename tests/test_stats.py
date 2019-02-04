@@ -1,12 +1,10 @@
-import sys
-import os
-
 import pytest
 import random
 from faker import Faker
 import pandas as pd
 from numpy import nan
 from mojostat import stats
+from mojostat import statutil
 from mojostat.statutil import MojoStatsException
 
 """
@@ -60,6 +58,46 @@ data_numeric = {
 #         logging.error(msg)
 #         assert test,msg
 
+
+class TestIsNumberSequenceClass:
+    @classmethod
+    def setup_class(cls):
+        print(f'\n****Testing {cls.__name__}\n')
+
+    def test_number_sequece(self):
+        global fake
+        assert statutil.is_number_sequence(fake.pyiterable(10, True, int))
+        assert statutil.is_number_sequence(fake.pyiterable(10, True, float))
+        assert statutil.is_number_sequence(fake.pyiterable(10, True, int, float))
+
+    def test_non_number_sequence(self):
+        global fake
+        assert not statutil.is_number_sequence(fake.pyiterable(10, True, str))
+        assert not statutil.is_number_sequence(fake.pyiterable(10, True, tuple))
+        assert not statutil.is_number_sequence(fake.pyiterable(10, True, str, float, int))
+        assert not statutil.is_number_sequence(fake.pyint())
+
+
+class TestIsStrSequenceClass:
+    @classmethod
+    def setup_class(cls):
+        print(f'\n****Testing {cls.__name__}\n')
+
+    def test_str_sequece(self):
+        global fake
+        assert statutil.is_str_sequence(fake.pyiterable(10, True, str))
+        assert statutil.is_str_sequence([str(x) for x in fake.pyiterable(10, True, float)])
+
+    def test_non_str_sequence(self):
+        global fake
+        assert not statutil.is_str_sequence(fake.pyiterable(10, True, float))
+        assert not statutil.is_str_sequence(fake.pyiterable(10, True, tuple))
+        assert not statutil.is_str_sequence(fake.pyiterable(10, True, str, float, int))
+        # assert not statutil.is_str_sequence(fake.pystr())
+
+# TODO: class TestColumnArrangeClase
+
+
 class TestIsNumericClass:
     @classmethod
     def setup_class(cls):
@@ -75,6 +113,28 @@ class TestIsNumericClass:
         assert stats.is_numeric(fake.name()) is False
         assert stats.is_numeric(fake.ipv4(network=False)) is False
         assert stats.is_numeric(fake.pyiterable(2)) is False
+
+# TODO: class TestIntOrFloatClass
+
+# TODO: class TestHeadTailClass
+
+# TODO: class TestIsNanColClass
+
+# TODO: class TestDumpNanColsClass
+
+# TODO: class TestTitleClass
+
+# TODO: class TestUniquePermutationsClass
+
+# TODO: class TestMakeVarFormulaClass
+
+# TODO: class TestParseEquationClass
+
+# TODO: class TestCounterToDfClass
+
+# TODO: class TestParallelizeDataFrameClass
+
+# TODO: class TestRoundAllClass
 
 
 class TestSqrClass:
@@ -100,12 +160,6 @@ class TestPDesc2Class:
         print(f'\n****Testing {cls.__name__}\n')
 
     def test_p_values(self):
-        # assert all([stats.p_desc2(p=random.uniform(.0001, .0009)) == " ***" for _ in range(REPS)]) is True
-        # assert all([stats.p_desc2(p=random.uniform(.001, .009)) == " **" for _ in range(REPS)]) is True
-        # assert all([stats.p_desc2(p=random.uniform(.01, .049)) == " *" for _ in range(REPS)]) is True
-        # assert all([stats.p_desc2(p=random.uniform(.05, .059)) == " ." for _ in range(REPS)]) is True
-        # assert all([stats.p_desc2(p=random.uniform(.06, 1.0)) == "" for _ in range(REPS)]) is True
-
         assert all([stats.p_desc2(p=random.uniform(.0001, .001)) == " ***" for _ in range(REPS)]) is True
         assert all([stats.p_desc2(p=random.uniform(.001, .01)) == " **" for _ in range(REPS)]) is True
         assert all([stats.p_desc2(p=random.uniform(.01, .05)) == " *" for _ in range(REPS)]) is True
@@ -156,7 +210,8 @@ class TestDFromDataClass:
         assert isinstance(stats.d_from_data(distribution1=seq1, distribution2=seq2), float)
 
     def test_bad_input(self):
-        with pytest.raises(MojoStatsException, message='distribution1 and distribution2 must each be a Sequence of numbers'):
+        with pytest.raises(MojoStatsException,
+                           message='distribution1 and distribution2 must each be a Sequence of numbers'):
             assert stats.d_from_data(1, 2) is None
         assert stats.d_from_data([23, 34, 34], []) is None
         with pytest.raises(TypeError, message='Expecting TypeError'):
@@ -212,34 +267,3 @@ class TestDumpNanColsClass:
             stats.dump_nan_cols({'Test1': [1, 2, 3], 'Test2': [4, 5, 6], 'Test3': [nan, nan, nan]})
 
 
-# class TestGetVarNameClass:
-#     @classmethod
-#     def setup_class(cls):
-#         print(f'\n****Testing {cls.__name__}\n')
-#
-#     def test_me(self):
-#         assert stats.get_var_name(self) == 'test_me'
-#         assert stats.get_var_name('nada') is None
-
-# todo: better test
-
-# class TestTablePctClass:
-#     @classmethod
-#     def setup_class(cls):
-#         print(f'\n****Testing {cls.__name__}\n')
-#
-#     def test_me(self):
-#         df = pd.DataFrame().from_dict(data_numeric)
-#         df_pct = stats.table_pct(df, colnames=['Test1', 'Test2'], denom=1000)
-#         t1 = stats.round_all(tuple(df_pct.head().Test1_pct))
-#         t2 = stats.round_all(tuple(df_pct.head().Test2_pct))
-#         print('>>>', t1)
-#         assert t1 == (24.9, 22.0, 12.5, 49.1, 18.40)
-#         assert t2 == (33.20, 32.40, 47.10, 22.20, 47.80)
-#
-#         with pytest.raises(Exception, message='Expecting exception due to invalid df argument'):
-#             df_pct = stats.table_pct([1, 2, 3], colnames=['Test1', 'Test2'], denom=1000)
-#
-#         df_pct = stats.table_pct(df, colnames='Test1', denom=1000)
-
-#
