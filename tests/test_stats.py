@@ -1,11 +1,13 @@
 import sys
 import os
-from statworkflow import stats
+
 import pytest
 import random
 from faker import Faker
 import pandas as pd
 from numpy import nan
+from mojostat import stats
+from mojostat.statutil import MojoStatsException
 
 """
 Uses pytest
@@ -146,7 +148,7 @@ class TestDFromDataClass:
     def test_known_input(self):
         seq1 = [476, 382, 366, 399, 341, 397, 438, 481, 453, 352, 414, 400, 344, 324, 361, 449, 379, 499, 426, 369]
         seq2 = [490, 496, 454, 598, 411, 404, 503, 441, 476, 566, 580, 593, 408, 504, 539, 417, 523, 492, 409, 431]
-        assert stats.d_from_data(distribution1=seq1, distribution2=seq2) == 1.4887230013907178
+        assert stats.d_from_data(distribution1=seq1, distribution2=seq2) == 1.4510276930942072  # 1.4887230013907178
 
     def test_good_input(self):
         seq1 = fake.pylist(10, False, fake.pyint())
@@ -154,7 +156,8 @@ class TestDFromDataClass:
         assert isinstance(stats.d_from_data(distribution1=seq1, distribution2=seq2), float)
 
     def test_bad_input(self):
-        assert stats.d_from_data(1, 2) is None
+        with pytest.raises(MojoStatsException, message='distribution1 and distribution2 must each be a Sequence of numbers'):
+            assert stats.d_from_data(1, 2) is None
         assert stats.d_from_data([23, 34, 34], []) is None
         with pytest.raises(TypeError, message='Expecting TypeError'):
             stats.d_from_data('476, 382, 366, 399, 341, 397'.split(','), '490, 496, 454, 598, 411, 404'.split(','))
@@ -209,56 +212,34 @@ class TestDumpNanColsClass:
             stats.dump_nan_cols({'Test1': [1, 2, 3], 'Test2': [4, 5, 6], 'Test3': [nan, nan, nan]})
 
 
-class TestGetVarNameClass:
-    @classmethod
-    def setup_class(cls):
-        print(f'\n****Testing {cls.__name__}\n')
-
-    def test_me(self):
-        assert stats.get_var_name(self) == 'test_me'
-        assert stats.get_var_name('nada') is None
+# class TestGetVarNameClass:
+#     @classmethod
+#     def setup_class(cls):
+#         print(f'\n****Testing {cls.__name__}\n')
+#
+#     def test_me(self):
+#         assert stats.get_var_name(self) == 'test_me'
+#         assert stats.get_var_name('nada') is None
 
 # todo: better test
 
-class TestTablePctClass:
-    @classmethod
-    def setup_class(cls):
-        print(f'\n****Testing {cls.__name__}\n')
+# class TestTablePctClass:
+#     @classmethod
+#     def setup_class(cls):
+#         print(f'\n****Testing {cls.__name__}\n')
+#
+#     def test_me(self):
+#         df = pd.DataFrame().from_dict(data_numeric)
+#         df_pct = stats.table_pct(df, colnames=['Test1', 'Test2'], denom=1000)
+#         t1 = stats.round_all(tuple(df_pct.head().Test1_pct))
+#         t2 = stats.round_all(tuple(df_pct.head().Test2_pct))
+#         print('>>>', t1)
+#         assert t1 == (24.9, 22.0, 12.5, 49.1, 18.40)
+#         assert t2 == (33.20, 32.40, 47.10, 22.20, 47.80)
+#
+#         with pytest.raises(Exception, message='Expecting exception due to invalid df argument'):
+#             df_pct = stats.table_pct([1, 2, 3], colnames=['Test1', 'Test2'], denom=1000)
+#
+#         df_pct = stats.table_pct(df, colnames='Test1', denom=1000)
 
-    def test_me(self):
-        from functools import partial
-        df = pd.DataFrame().from_dict(data_numeric)
-        df_pct = stats.table_pct(df, colnames=['Test1', 'Test2'], denom=1000)
-        t1 = stats.round_all(tuple(df_pct.head().Test1_pct))
-        t2 = stats.round_all(tuple(df_pct.head().Test2_pct))
-        print('>>>', t1)
-        assert t1 == (24.9, 22.0, 12.5, 49.1, 18.40)
-        assert t2 == (33.20, 32.40, 47.10, 22.20, 47.80)
-
-        with pytest.raises(Exception, message='Expecting exception due to invalid df argument'):
-            df_pct = stats.table_pct([1, 2, 3], colnames=['Test1', 'Test2'], denom=1000)
-
-        df_pct = stats.table_pct(df, colnames='Test1', denom=1000)
-
-# import pandas as pd
-# from functools import partial
-# def halve(x):
-#     return x/3
-# data_numeric = {
-#     'subid': {0: 100, 1: 101, 2: 102, 3: 103, 4: 104, 5: 105, 6: 106, 7: 107, 8: 108, 9: 109, 10: 110, 11: 111, 12: 112,
-#               13: 113, 14: 114, 15: 115, 16: 116, 17: 117, 18: 118, 19: 119, 20: 120, 21: 121, 22: 122, 23: 123,
-#               24: 124, 25: 125, 26: 126, 27: 127, 28: 128},
-#     'Test1': {0: 249, 1: 220, 2: 125, 3: 491, 4: 184, 5: 406, 6: 417, 7: 295, 8: 291, 9: 133, 10: 347, 11: 348, 12: 290,
-#               13: 178, 14: 117, 15: 156, 16: 300, 17: 148, 18: 307, 19: 272, 20: 165, 21: 464, 22: 151, 23: 288,
-#               24: 172, 25: 239, 26: 389, 27: 471, 28: 284},
-#     'Test2': {0: 332, 1: 324, 2: 471, 3: 222, 4: 478, 5: 432, 6: 378, 7: 451, 8: 479, 9: 305, 10: 102, 11: 321, 12: 310,
-#               13: 252, 14: 301, 15: 277, 16: 259, 17: 357, 18: 489, 19: 379, 20: 128, 21: 262, 22: 411, 23: 148,
-#               24: 339, 25: 396, 26: 291, 27: 454, 28: 375},
-#     'Test3': {0: 1152, 1: 1427, 2: 1340, 3: 1342, 4: 1278, 5: 1007, 6: 993, 7: 1481, 8: 899, 9: 1129, 10: 874, 11: 938,
-#               12: 1004, 13: 1055, 14: 1250, 15: 1374, 16: 955, 17: 1131, 18: 1184, 19: 925, 20: 829, 21: 1355, 22: 1086,
-#               23: 1002, 24: 1416, 25: 1274, 26: 904, 27: 1220, 28: 822}}
-# df = pd.DataFrame().from_dict(data_numeric)
-# print(df.head())
-# df = df.applymap(halve)
-# df = df.applymap(partial(round, ndigits=2))
-# print(df.head())
+#
